@@ -11,6 +11,7 @@
 #include "peerlookup.h"
 #include "cookie.h"
 
+//#include <crypto/internal/cipher.h>
 #include <linux/types.h>
 #include <linux/netdevice.h>
 #include <linux/workqueue.h>
@@ -57,9 +58,13 @@ struct wg_device {
 	unsigned int num_peers, device_update_gen;
 	u32 fwmark;
 	u16 incoming_port;
+	struct crypto_cipher *header_aes;
 };
 
 int wg_device_init(void);
 void wg_device_uninit(void);
+
+int wg_encrypt_header_aes(struct wg_device *wg, void *buffer, size_t len);
+int wg_decrypt_header_aes(struct wg_device *wg, void *buffer, size_t len);
 
 #endif /* _WG_DEVICE_H */

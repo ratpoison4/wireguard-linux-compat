@@ -87,6 +87,10 @@ static int prepare_skb_header(struct sk_buff *skb, struct wg_device *wg)
 	if (unlikely(skb->len != data_len))
 		/* Final len does not agree with calculated len */
 		return -EINVAL;
+
+	if (unlikely(wg_decrypt_header_aes(wg, skb->data, skb->len) < 0))
+		return -EINVAL;
+
 	header_len = validate_header_len(skb);
 	if (unlikely(!header_len))
 		return -EINVAL;

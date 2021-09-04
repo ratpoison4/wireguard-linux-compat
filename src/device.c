@@ -243,6 +243,7 @@ static void wg_destruct(struct net_device *dev)
 	destroy_workqueue(wg->handshake_receive_wq);
 	destroy_workqueue(wg->handshake_send_wq);
 	destroy_workqueue(wg->packet_crypt_wq);
+	crypto_free_cipher(wg->header_aes);
 	wg_packet_queue_free(&wg->decrypt_queue);
 	wg_packet_queue_free(&wg->encrypt_queue);
 	rcu_barrier(); /* Wait for all the peers to be actually freed. */
@@ -301,6 +302,27 @@ static void wg_setup(struct net_device *dev)
 	wg->dev = dev;
 }
 
+const unsigned int aes_key_len = 16;
+const u8 aes_key[16] = "TODOTODOTODOTODO";
+
+int wg_encrypt_header_aes(struct wg_device *wg, void *buffer, size_t len) {
+	u8 tmp[16];
+	if (unlikely(len < 16))
+		return -EINVAL;
+	crypto_cipher_encrypt_one(wg->header_aes, tmp, buffer);
+	memcpy(buffer, tmp, 16);
+	return 0;
+}
+
+int wg_decrypt_header_aes(struct wg_device *wg, void *buffer, size_t len) {
+	u8 tmp[16];
+	if (unlikely(len < 16))
+		return -EINVAL;
+	crypto_cipher_decrypt_one(wg->header_aes, tmp, buffer);
+	memcpy(buffer, tmp, 16);
+	return 0;
+}
+
 static int wg_newlink(struct net *src_net, struct net_device *dev,
 		      struct nlattr *tb[], struct nlattr *data[],
 		      struct netlink_ext_ack *extack)
@@ -351,10 +373,17 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 	if (!wg->packet_crypt_wq)
 		goto err_destroy_handshake_send;
 
+	wg->header_aes = crypto_alloc_cipher("aes", 0, 0);
+	if (!wg->header_aes)
+		goto err_destroy_packet_crypt;
+	ret = crypto_cipher_setkey(wg->header_aes, aes_key, aes_key_len);
+	if (ret < 0)
+		goto err_destroy_packet_crypt;
+
 	ret = wg_packet_queue_init(&wg->encrypt_queue, wg_packet_encrypt_worker,
 				   MAX_QUEUED_PACKETS);
 	if (ret < 0)
-		goto err_destroy_packet_crypt;
+		goto err_destroy_header_aes;
 
 	ret = wg_packet_queue_init(&wg->decrypt_queue, wg_packet_decrypt_worker,
 				   MAX_QUEUED_PACKETS);
@@ -385,6 +414,8 @@ err_free_decrypt_queue:
 	wg_packet_queue_free(&wg->decrypt_queue);
 err_free_encrypt_queue:
 	wg_packet_queue_free(&wg->encrypt_queue);
+err_destroy_header_aes:
+	crypto_free_cipher(wg->header_aes);
 err_destroy_packet_crypt:
 	destroy_workqueue(wg->packet_crypt_wq);
 err_destroy_handshake_send:

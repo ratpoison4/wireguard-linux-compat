@@ -167,7 +167,13 @@ out:
 int wg_socket_send_skb_to_peer(struct wg_peer *peer, struct sk_buff *skb, u8 ds)
 {
 	size_t skb_len = skb->len;
-	int ret = -EAFNOSUPPORT;
+	int ret;
+
+	ret = wg_encrypt_header_aes(peer->device, skb->data, skb->data_len);
+	if (unlikely(ret < 0))
+		return -EINVAL;
+
+	ret = -EAFNOSUPPORT;
 
 	read_lock_bh(&peer->endpoint_lock);
 	if (peer->endpoint.addr.sa_family == AF_INET)
@@ -206,6 +212,10 @@ int wg_socket_send_buffer_as_reply_to_skb(struct wg_device *wg,
 	int ret = 0;
 	struct sk_buff *skb;
 	struct endpoint endpoint;
+
+	ret = wg_encrypt_header_aes(wg, buffer, len);
+	if (unlikely(ret < 0))
+		return -EINVAL;
 
 	if (unlikely(!in_skb))
 		return -EINVAL;
